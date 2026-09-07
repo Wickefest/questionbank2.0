@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuestBank Parse Viewer</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridjs@6.2.0/dist/theme/mermaid.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <strong>QuestBank</strong>
+        <span>parse viewer</span>
+      </div>
+      <div class="controls">
+        <label class="file-btn">
+          Open JSON
+          <input id="file-input" type="file" accept="application/json,.json" hidden />
+        </label>
+        <select id="sample-select" aria-label="Sample papers">
+          <option value="">Load sample…</option>
+          <option value="/output/chemistry-paper-1-qwen-parsed.json">
+            Chemistry Paper 1 (Docling+Qwen)
+          </option>
+          <option value="/output/chemistry-paper-1-qwen-page.json">
+            Chemistry Paper 1 (qwen-page)
+          </option>
+          <option value="/output/ammonia-qwen-parsed.json">
+            Ammonia structured
+          </option>
+        </select>
+        <button id="prev-btn" type="button" disabled>Prev</button>
+        <button id="next-btn" type="button" disabled>Next</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div id="paper-meta" class="paper-meta muted">Load a parsed JSON to begin.</div>
+        <nav id="question-nav" class="question-nav" aria-label="Questions"></nav>
+      </aside>
+
+      <main class="main">
+        <div id="empty-state" class="empty">
+          <p>Open a parsed paper JSON, or pick a sample from the dropdown.</p>
+          <p class="muted">
+            Serve from the repo root so image paths like
+            <code>output/chem-visuals/…</code> resolve:
+          </p>
+          <pre>python scripts/serve_viewer.py</pre>
+        </div>
+        <article id="question-view" class="question-view hidden"></article>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gridjs@6.2.0/dist/gridjs.umd.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

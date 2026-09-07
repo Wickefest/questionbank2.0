@@ -10,6 +10,7 @@ from questbank.types.layout import BoundingBox
 OptionLabel = Literal["A", "B", "C", "D"]
 ValidationStatus = Literal["pass", "review"]
 OPTION_LABELS: tuple[OptionLabel, ...] = ("A", "B", "C", "D")
+ContentBlockType = Literal["text", "diagram", "table", "options"]
 
 
 class ValidationIssue(BaseModel):
@@ -29,6 +30,8 @@ class SourceRegion(BaseModel):
     page_end: int = Field(serialization_alias="pageEnd")
     bounding_box: BoundingBox | None = Field(default=None, serialization_alias="boundingBox")
 
+    model_config = {"populate_by_name": True}
+
 
 class VisualAsset(BaseModel):
     role: Literal["stem", "option"]
@@ -37,6 +40,9 @@ class VisualAsset(BaseModel):
     bounding_box: BoundingBox = Field(serialization_alias="boundingBox")
     path: str
     mime_type: str = Field(default="image/png", serialization_alias="mimeType")
+    asset_id: str | None = Field(default=None, serialization_alias="assetId")
+
+    model_config = {"populate_by_name": True}
 
 
 class VisualExpectation(BaseModel):
@@ -56,6 +62,18 @@ class ParsedTable(BaseModel):
     rows: list[list[str]] = Field(default_factory=list)
 
 
+class ContentBlock(BaseModel):
+    """Ordered piece of a question matching exam layout (text → diagram → options)."""
+
+    type: ContentBlockType
+    text: str | None = None
+    requires_visual: bool = Field(default=False, serialization_alias="requiresVisual")
+    asset_path: str | None = Field(default=None, serialization_alias="assetPath")
+    table_index: int | None = Field(default=None, serialization_alias="tableIndex")
+
+    model_config = {"populate_by_name": True}
+
+
 class QuestionValidation(BaseModel):
     status: ValidationStatus
     issues: list[ValidationIssue] = Field(default_factory=list)
@@ -64,9 +82,14 @@ class QuestionValidation(BaseModel):
 class ParsedQuestion(BaseModel):
     question_number: int = Field(serialization_alias="questionNumber")
     source: SourceRegion
+    source_regions: list[SourceRegion] = Field(
+        default_factory=list,
+        serialization_alias="sourceRegions",
+    )
     stem: str
     question_type: Literal["mcq"] = Field(default="mcq", serialization_alias="questionType")
     options: dict[OptionLabel, ParsedOption]
+    content: list[ContentBlock] = Field(default_factory=list)
     tables: list[ParsedTable] = Field(default_factory=list)
     chemistry: ChemistryAnnotations = Field(default_factory=ChemistryAnnotations)
     visual: VisualExpectation

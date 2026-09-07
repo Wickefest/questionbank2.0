@@ -90,13 +90,15 @@ def _parse_slice(
     tables = tables_for_slice(item, layout, images)
     options = merge_options_with_tables(options, tables)
     stem = _parse_stem(item, options, images, tables)
+    source = SourceRegion(
+        page_start=item.page_start,
+        page_end=item.page_end,
+        bounding_box=_question_bbox(item, images),
+    )
     provisional = ParsedQuestion(
         question_number=item.number,
-        source=SourceRegion(
-            page_start=item.page_start,
-            page_end=item.page_end,
-            bounding_box=_question_bbox(item, images),
-        ),
+        source=source,
+        source_regions=[source],
         stem=stem,
         options=options,
         tables=tables,
@@ -117,13 +119,15 @@ def _parse_slice(
         stem,
         {label: option.text for label, option in options.items()},
     )
+    source = SourceRegion(
+        page_start=item.page_start,
+        page_end=item.page_end,
+        bounding_box=_question_bbox(item, images),
+    )
     question = ParsedQuestion(
         question_number=item.number,
-        source=SourceRegion(
-            page_start=item.page_start,
-            page_end=item.page_end,
-            bounding_box=_question_bbox(item, images),
-        ),
+        source=source,
+        source_regions=[source],
         stem=stem,
         options=options,
         tables=tables,

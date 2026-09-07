@@ -15,6 +15,27 @@ from questbank.types.question import (
 )
 
 
+def test_band_assignment_includes_option_diagram_below_stem_text():
+    """Option grids often sit below the last OCR line of the stem."""
+    bands = build_slice_bands(
+        [
+            (3, 3, 60.0),
+            (4, 3, 377.0),
+            (5, 4, 60.0),
+        ],
+        final_page=4,
+    )
+    images = [
+        ImageRegion(page=3, bbox=BoundingBox(x0=99, y0=175, x1=543, y1=288), block_index=0),
+        ImageRegion(page=3, bbox=BoundingBox(x0=94, y0=471, x1=558, y1=767), block_index=1),
+    ]
+    assigned = assign_images_to_questions(bands, images)
+    assert len(assigned[3]) == 1
+    assert assigned[3][0].block_index == 0
+    assert len(assigned[4]) == 1
+    assert assigned[4][0].block_index == 1
+
+
 def test_image_bands_prevent_cross_question_duplicates():
     bands = build_slice_bands(
         [
@@ -91,6 +112,56 @@ def test_promote_does_not_turn_stem_apparatus_into_options():
     updated, remapped = promote_visual_options(question, images)
     assert all(not updated.options[label].requires_visual for label in ("A", "B", "C", "D"))
     assert remapped == images
+
+
+def test_promote_stem_above_structure_options_grid():
+    """Polymer stem figure + A–D structure grid below → options.png, not stem-2."""
+    images = [
+        ImageRegion(page=15, bbox=BoundingBox(x0=207, y0=307, x1=435, y1=396), block_index=0),
+        ImageRegion(page=15, bbox=BoundingBox(x0=100, y0=446, x1=451, y1=605), block_index=1),
+    ]
+    # Visual structure scraps as options → mark requires_visual before promote.
+    question = ParsedQuestion(
+        question_number=40,
+        source=SourceRegion(page_start=15, page_end=15, bounding_box=None),
+        stem="A section of a polymer is shown below.",
+        options={
+            "A": ParsedOption(label="A", text=None, requires_visual=True),
+            "B": ParsedOption(label="B", text=None, requires_visual=True),
+            "C": ParsedOption(label="C", text=None, requires_visual=True),
+            "D": ParsedOption(label="D", text=None, requires_visual=True),
+        },
+        visual=VisualExpectation(required=True, extraction_pending=True),
+        validation={"status": "pass", "issues": []},
+    )
+    updated, remapped = promote_visual_options(question, images)
+    assert all(updated.options[label].requires_visual for label in ("A", "B", "C", "D"))
+    assert len(remapped) == 2
+    assert remapped[0].block_index == 0
+    assert remapped[1].bbox.y0 == 446
+
+
+def test_promote_label_echo_options_as_visual_grid():
+    images = [
+        ImageRegion(page=3, bbox=BoundingBox(x0=100, y0=300, x1=520, y1=620), block_index=1),
+    ]
+    question = ParsedQuestion(
+        question_number=4,
+        source=SourceRegion(page_start=3, page_end=3, bounding_box=None),
+        stem="A student is provided with two drying agents.",
+        options={
+            "A": ParsedOption(label="A", text="dry", requires_visual=False),
+            "B": ParsedOption(label="B", text="B", requires_visual=False),
+            "C": ParsedOption(label="C", text="C", requires_visual=False),
+            "D": ParsedOption(label="D", text="D", requires_visual=False),
+        },
+        visual=VisualExpectation(required=False, extraction_pending=False),
+        validation={"status": "pass", "issues": []},
+    )
+    updated, remapped = promote_visual_options(question, images)
+    assert all(updated.options[label].requires_visual for label in ("A", "B", "C", "D"))
+    assert all(updated.options[label].text is None for label in ("A", "B", "C", "D"))
+    assert len(remapped) == 1
 
 
 def test_promote_visual_options_keeps_combined_grid():

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from questbank.types.layout import BoundingBox
 from questbank.types.question import (
+    ContentBlock,
     ParsedTable,
     QuestionValidation,
     SourceRegion,
@@ -31,6 +32,7 @@ class StructuredQuestion(BaseModel):
     )
     stem: str = ""
     parts: list[StructuredPart] = Field(default_factory=list)
+    content: list[ContentBlock] = Field(default_factory=list)
     marks_total: int | None = Field(default=None, serialization_alias="marksTotal")
     tables: list[ParsedTable] = Field(default_factory=list)
     visual: VisualExpectation

@@ -4,6 +4,7 @@ from collections import Counter
 
 from questbank.types.question import (
     OPTION_LABELS,
+    OptionLabel,
     PaperValidation,
     ParsedPaper,
     ParsedQuestion,
@@ -19,7 +20,6 @@ def validate_parsed_paper(
     numbered = sorted(questions, key=lambda item: item.question_number)
     counts = Counter(item.question_number for item in numbered)
     expected_numbers = list(range(1, expected_count + 1))
-    present = [number for number in expected_numbers if counts.get(number)]
     missing = [number for number in expected_numbers if number not in counts]
     duplicates = [number for number, count in counts.items() if count > 1]
 
@@ -73,8 +73,35 @@ def validate_parsed_paper(
     )
 
 
+def option_is_evidenced(question: ParsedQuestion, label: OptionLabel) -> bool:
+    """True when option has extractable text and/or a visual crop asset."""
+    option = question.options.get(label)
+    if option is None:
+        return False
+    if option.text is not None and option.text.strip():
+        return True
+    return question_has_option_visual_asset(question, label)
+
+
+def question_has_option_visual_asset(
+    question: ParsedQuestion,
+    label: OptionLabel | None = None,
+) -> bool:
+    """True when an options-role crop exists (shared grid or per-label)."""
+    for asset in question.visual.assets:
+        if asset.role != "option":
+            continue
+        if label is None or asset.option_label is None or asset.option_label == label:
+            return True
+    return False
+
+
 def _validate_question(question: ParsedQuestion) -> ParsedQuestion:
     issues: list[ValidationIssue] = []
+    # Preserve multi-region list when callers only set `source`.
+    if not question.source_regions:
+        question = question.model_copy(update={"source_regions": [question.source]})
+
     if not question.stem.strip():
         issues.append(
             ValidationIssue(
@@ -95,6 +122,9 @@ def _validate_question(question: ParsedQuestion) -> ParsedQuestion:
             )
             continue
         if option.requires_visual:
+            # Only pending when no option crop asset exists yet.
+            if question_has_option_visual_asset(question, label):
+                continue
             issues.append(
                 ValidationIssue(
                     code="VISUAL_OPTION_EXTRACTION_PENDING",
@@ -113,7 +143,6 @@ def _validate_question(question: ParsedQuestion) -> ParsedQuestion:
             )
     if question.visual.required:
         if question.visual.assets:
-            # Extracted crops are available for the API/consumer.
             pass
         else:
             issues.append(

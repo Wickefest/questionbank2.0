@@ -19,9 +19,17 @@ def tables_for_slice(
     item: QuestionSlice,
     layout: PaperLayout,
     images: list[ImageRegion],
+    *,
+    y_end_exclusive: float | None = None,
+    page_end_exclusive: int | None = None,
 ) -> list[ParsedTable]:
     parsed: list[ParsedTable] = []
-    for table in _tables_in_slice(item, layout):
+    for table in _tables_in_slice(
+        item,
+        layout,
+        y_end_exclusive=y_end_exclusive,
+        page_end_exclusive=page_end_exclusive,
+    ):
         if _table_overlaps_image(table, images):
             continue
         role = _table_role(table)
@@ -78,7 +86,7 @@ def option_row_parts(row: list[str]) -> tuple[OptionLabel | None, str]:
     first = (row[0] or "").strip()
     if first in OPTION_LABELS:
         rest = [_clean_cell(cell) for cell in row[1:] if _clean_cell(cell)]
-        return first, " ".join(rest)  # type: ignore[return-value]
+        return first, " | ".join(rest)  # type: ignore[return-value]
     for index, cell in enumerate(row):
         value = (cell or "").strip()
         if value in OPTION_LABELS:
@@ -87,7 +95,7 @@ def option_row_parts(row: list[str]) -> tuple[OptionLabel | None, str]:
                 for other_index, other in enumerate(row)
                 if other_index != index and _clean_cell(other)
             ]
-            return value, " ".join(rest)  # type: ignore[return-value]
+            return value, " | ".join(rest)  # type: ignore[return-value]
         match = _LEADING_OPTION.match(value)
         if match:
             rest = [match.group(2)]
@@ -122,20 +130,58 @@ def line_is_figure_text(line: TextLine, images: list[ImageRegion]) -> bool:
     return False
 
 
-def _tables_in_slice(item: QuestionSlice, layout: PaperLayout) -> list[TableRegion]:
+def _tables_in_slice(
+    item: QuestionSlice,
+    layout: PaperLayout,
+    *,
+    y_end_exclusive: float | None = None,
+    page_end_exclusive: int | None = None,
+) -> list[TableRegion]:
+    """Include tables whose centre sits in this question's band.
+
+    Prefer an exclusive end at the next question start when provided; otherwise
+    fall back to a small pad below the last OCR line.
+    """
     y_start = item.start.line.y0
-    last_line = item.lines[-1]
+    if y_end_exclusive is None or page_end_exclusive is None:
+        y_end_exclusive = item.lines[-1].y1 + 40
+        page_end_exclusive = item.page_end
+
     tables: list[TableRegion] = []
     for page in layout.pages:
-        if page.page_number < item.page_start or page.page_number > item.page_end:
-            continue
         for table in page.tables:
-            if page.page_number == item.page_start and table.bbox.y1 < y_start - 8:
-                continue
-            if page.page_number == item.page_end and table.bbox.y0 > last_line.y1 + 40:
+            cy = (table.bbox.y0 + table.bbox.y1) / 2
+            if not _point_in_band(
+                page.page_number,
+                cy,
+                page_start=item.page_start,
+                y_start=y_start,
+                page_end=page_end_exclusive,
+                y_end=y_end_exclusive,
+            ):
                 continue
             tables.append(table)
     return tables
+
+
+def _point_in_band(
+    page: int,
+    cy: float,
+    *,
+    page_start: int,
+    y_start: float,
+    page_end: int,
+    y_end: float,
+) -> bool:
+    if page < page_start or page > page_end:
+        return False
+    if page_start == page_end:
+        return y_start - 8 <= cy < y_end - 1
+    if page == page_start:
+        return cy >= y_start - 8
+    if page == page_end:
+        return cy < y_end - 1
+    return True
 
 
 def _table_role(table: TableRegion) -> TableRole:

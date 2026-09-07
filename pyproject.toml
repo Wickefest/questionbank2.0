@@ -4,27 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "questbank"
-version = "0.1.0"
-description = "Phase 1 Chemistry Paper 1 MCQ ingestion parser"
+version = "0.2.0"
+description = "Chemistry MCQ exam PDF ingest (Docling + Gemini + Supabase drafts)"
 requires-python = ">=3.11"
 dependencies = [
   "pymupdf>=1.24.0",
   "pydantic>=2.10.0",
   "docling>=2.14.0",
-  "rapidocr-onnxruntime>=1.3.0",
+  "rapidocr>=3.0.0",
+  "onnxruntime>=1.17.0",
   "pillow>=10.0.0",
+  "google-genai>=1.0.0",
+  "python-dotenv>=1.0.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3.0",
+  "httpx>=0.27.0",
 ]
-vision = [
-  "google-generativeai>=0.8.0",
+supabase = [
+  "supabase>=2.0.0",
 ]
 
 [project.scripts]
 parse-chemistry-paper-1 = "questbank.cli:main"
+parse-chemistry-ingest = "questbank.cli:ingest_main"
+questbank-serve = "questbank.api.app:serve"
 
 [tool.setuptools.packages.find]
 where = ["src"]

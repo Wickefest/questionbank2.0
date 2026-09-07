@@ -13,6 +13,7 @@ from questbank.types.question import (
 )
 
 _OPTION_GRID_Y_GAP = 30.0
+_STALE_VISUAL = "q*-*.png"
 
 
 def extract_question_visuals(
@@ -30,17 +31,130 @@ def extract_question_visuals(
     pdf_path = Path(pdf_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    _clear_stale_visuals(output_dir)
 
+    bands = _question_bands(questions)
     updated: list[ParsedQuestion] = []
     with pymupdf.open(pdf_path) as doc:
         for question in questions:
             images = list(images_by_question.get(question.question_number, []))
             question, images = promote_visual_options(question, images)
+            if _needs_band_fallback(question, images):
+                fallback = _band_fallback_image(question, bands, doc)
+                if fallback is not None:
+                    images = [fallback]
+                    question, images = promote_visual_options(question, images)
             assets = _crop_assets(doc, question, images, output_dir)
             visual = _visual_with_assets(question.visual, assets)
             updated.append(question.model_copy(update={"visual": visual}))
     return updated
 
+
+def _clear_stale_visuals(output_dir: Path) -> None:
+    """Remove prior run crops so leftover qNN-stem-2.png cannot mislead review."""
+    for path in output_dir.glob(_STALE_VISUAL):
+        try:
+            path.unlink()
+        except OSError:
+            continue
+
+
+def _option_looks_empty_or_label_echo(option: ParsedOption) -> bool:
+    text = (option.text or "").strip()
+    if not text:
+        return True
+    if text in {"...", "…", "[diagram]", "[structure]", "<visual>", "visual"}:
+        return True
+    if text.upper() == option.label:
+        return True
+    if len(text) == 1 and text.upper() in OPTION_LABELS:
+        return True
+    return False
+
+
+def _needs_band_fallback(question: ParsedQuestion, images: list[ImageRegion]) -> bool:
+    """Only invent a crop when Docling missed a stem diagram — never for text MCQs.
+
+    Graphics A–D options require real layout pictures. Band-cropping a text
+    question produces fake options.png files (whole stem / page footer).
+    """
+    if images:
+        return False
+    # Do not fabricate options.png from the question text band.
+    if any(option.requires_visual for option in question.options.values()):
+        return False
+    return bool(question.visual.required)
+
+
+def _question_bands(
+    questions: list[ParsedQuestion],
+) -> dict[int, tuple[int, float, int, float]]:
+    ordered = sorted(
+        questions,
+        key=lambda q: (
+            q.source.page_start,
+            q.source.bounding_box.y0 if q.source.bounding_box else 0.0,
+        ),
+    )
+    bands: dict[int, tuple[int, float, int, float]] = {}
+    for index, question in enumerate(ordered):
+        y0 = question.source.bounding_box.y0 if question.source.bounding_box else 0.0
+        if index + 1 < len(ordered):
+            nxt = ordered[index + 1]
+            next_page = nxt.source.page_start
+            next_y0 = nxt.source.bounding_box.y0 if nxt.source.bounding_box else 10_000.0
+        else:
+            next_page = question.source.page_end + 1
+            next_y0 = 10_000.0
+        bands[question.question_number] = (
+            question.source.page_start,
+            y0,
+            next_page,
+            next_y0,
+        )
+    return bands
+
+
+def _band_fallback_image(
+    question: ParsedQuestion,
+    bands: dict[int, tuple[int, float, int, float]],
+    doc,
+) -> ImageRegion | None:
+    """When Docling misses drawings, crop the question band as a single figure."""
+    band = bands.get(question.question_number)
+    bbox = question.source.bounding_box
+    if band is None or bbox is None:
+        return None
+    page_start, y0, page_end, y_end = band
+    page_index = page_start - 1
+    if page_index < 0 or page_index >= doc.page_count:
+        return None
+    page = doc[page_index]
+    page_height = float(page.rect.height)
+    page_width = float(page.rect.width)
+    # Prefer content below the stem text when options are visual-only.
+    visual_options = all(
+        question.options[label].requires_visual for label in OPTION_LABELS
+    )
+    if visual_options:
+        stem_bottom = bbox.y1
+        lower = stem_bottom + 4.0
+        upper = y_end - 2.0 if page_end == page_start else page_height - 36.0
+        if upper - lower < 40:
+            lower = y0
+            upper = y_end if page_end == page_start else page_height - 36.0
+    else:
+        lower = y0
+        upper = y_end if page_end == page_start else page_height - 36.0
+    upper = min(upper, page_height - 8.0)
+    lower = max(0.0, lower)
+    if upper - lower < 24:
+        return None
+    return ImageRegion(
+        page=page_start,
+        bbox=BoundingBox(x0=36.0, y0=lower, x1=page_width - 36.0, y1=upper),
+        block_index=-1,
+    )
 
 def assign_images_to_questions(
     slices_meta: list[tuple[int, int, float, int, float]],
@@ -115,30 +229,42 @@ def promote_visual_options(
     question: ParsedQuestion,
     images: list[ImageRegion],
 ) -> tuple[ParsedQuestion, list[ImageRegion]]:
-    """Mark empty A-D as visual and keep option figures as one combined region.
+    """If A–D have no extractable text and pictures exist, use ONE options crop.
 
-    Do not split grids into per-label crops — the UI uses labels + one options photo.
+    Stem graphs / organic structures stay separate stem crops. Graphics options
+    are always merged into a single options.png (never per-letter crops).
+    Text-only questions with no Docling pictures are left alone.
     """
     from questbank.parsers.chemistry.visual_cues import stem_requires_visual
 
-    empty = [
+    if not images:
+        return question, images
+
+    no_text = [
         label
         for label in OPTION_LABELS
-        if question.options[label].text is None
-        or not (question.options[label].text or "").strip()
+        if _option_looks_empty_or_label_echo(question.options[label])
     ]
-    if len(empty) < 4 or not images:
+    already_graphics = sum(
+        1 for label in OPTION_LABELS if question.options[label].requires_visual
+    )
+    # Empty A–D + layout pictures (or already flagged graphics) → options grid.
+    treat_as_graphics_options = len(no_text) >= 3 or already_graphics >= 3
+    if not treat_as_graphics_options:
         return question, images
 
     stem_images, option_images = _split_stem_and_option_images(images)
     if not option_images:
         if len(images) == 1:
-            # Single figure + empty A-D: options grid (Q4), unless stem itself needs the figure (Q6).
-            if stem_requires_visual(question.stem):
+            # Single figure + empty A-D: options grid, unless stem itself needs the figure.
+            if stem_requires_visual(question.stem) and not any(
+                question.options[label].requires_visual for label in OPTION_LABELS
+            ):
                 return question, images
             stem_images, option_images = [], list(images)
         elif len(images) >= 2:
-            stem_images, option_images = [], list(images)
+            ordered = sorted(images, key=lambda img: (img.page, img.bbox.y0, img.bbox.x0))
+            stem_images, option_images = ordered[:-1], ordered[-1:]
         else:
             return question, images
 
@@ -161,6 +287,7 @@ def promote_visual_options(
 def _split_stem_and_option_images(
     images: list[ImageRegion],
 ) -> tuple[list[ImageRegion], list[ImageRegion]]:
+    """Split stem diagrams (above) from the A–D options figure block (below)."""
     if len(images) <= 1:
         return list(images), []
     ordered = sorted(images, key=lambda img: (img.page, img.bbox.y0, img.bbox.x0))
@@ -171,13 +298,15 @@ def _split_stem_and_option_images(
     gaps.sort(reverse=True)
     best_gap, split_at = gaps[0]
     below = ordered[split_at + 1 :]
-    # Stem figure above a multi-cell option block.
+    # Stem figure(s) above a multi-cell option block.
     if len(below) >= 2 and best_gap >= 8:
         return ordered[: split_at + 1], below
+    # Row of 3+ small option tiles → treat as one options grid.
     if best_gap < _OPTION_GRID_Y_GAP and len(ordered) >= 3:
         return ordered[:1], ordered[1:]
     if best_gap < 8:
         return [], ordered
+    # Default: everything above the last gap is stem; last group is options.
     return ordered[: split_at + 1], ordered[split_at + 1 :]
 
 
@@ -286,6 +415,7 @@ def _render_image(
         pix.save(str(path))
     except Exception:  # noqa: BLE001
         return None
+    asset_id = path.stem
     return VisualAsset(
         role=role,  # type: ignore[arg-type]
         option_label=option_label,
@@ -293,6 +423,7 @@ def _render_image(
         bounding_box=image.bbox,
         path=str(path).replace("\\", "/"),
         mime_type="image/png",
+        asset_id=asset_id,
     )
 
 

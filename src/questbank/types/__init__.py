@@ -1,6 +1,7 @@
 from questbank.types.layout import BoundingBox, ImageRegion, PageLayout, PaperLayout, TableRegion, TextLine
 from questbank.types.question import (
     OPTION_LABELS,
+    ContentBlock,
     OptionLabel,
     ParsedOption,
     ParsedPaper,
@@ -19,21 +20,36 @@ from questbank.types.structured import (
     StructuredPart,
     StructuredQuestion,
 )
+from questbank.types.ingest import (
+    AnswerKeyEntry,
+    DocumentManifest,
+    EvaluationReport,
+    MatchingReport,
+    PaperIdentity,
+    QuestionRecord,
+)
 from questbank.normalize.chemistry import ChemistryAnnotations, ChemistryToken
 
 __all__ = [
+    "AnswerKeyEntry",
     "BoundingBox",
     "ChemistryAnnotations",
     "ChemistryToken",
+    "ContentBlock",
+    "DocumentManifest",
+    "EvaluationReport",
     "ImageRegion",
+    "MatchingReport",
     "OPTION_LABELS",
     "OptionLabel",
     "PageLayout",
+    "PaperIdentity",
     "PaperLayout",
     "ParsedOption",
     "ParsedPaper",
     "ParsedQuestion",
     "ParsedTable",
+    "QuestionRecord",
     "SourceRegion",
     "StructuredPaper",
     "StructuredPaperValidation",

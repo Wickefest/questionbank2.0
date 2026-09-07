@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from questbank.types.layout import PaperLayout, TextLine
 
 QUESTION_MIN = 1
-QUESTION_MAX = 40
+# Soft upper bound for candidate scanning; detect_question_boundaries also
+# clamps to the caller-supplied expected_count (fixture param, not universal).
+QUESTION_MAX = 99
 
 _LEFT_MARGIN_MAX_X0 = 90.0
 _HEADER_Y = 50.0

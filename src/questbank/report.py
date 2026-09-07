@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from questbank.types.question import ParsedPaper, ParsedQuestion
 
 
@@ -59,6 +61,13 @@ def _format_question(question: ParsedQuestion) -> list[str]:
         else:
             lines.append(f"{label}: <empty>")
     lines.append(f"Visual required: {str(question.visual.required).lower()}")
+    if question.content:
+        order = " → ".join(
+            f"{block.type}"
+            + (f"({Path(block.asset_path).name})" if block.asset_path else "")
+            for block in question.content
+        )
+        lines.append(f"Content order: {order}")
     if question.tables:
         roles = ", ".join(f"{table.role} {len(table.rows)}x{len(table.headers)}" for table in question.tables)
         lines.append(f"Tables: {roles}")
